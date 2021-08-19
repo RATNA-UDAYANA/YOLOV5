@@ -26,13 +26,13 @@ from utils.torch_utils import select_device, load_classifier, time_sync
 
 @torch.no_grad()
 def run(weights='yolov5s.pt',  # model.pt path(s)
-        source='data/images',  # file/dir/URL/glob, 0 for webcam
+        source='test-image3.jpg',  # file/dir/URL/glob, 0 for webcam
         imgsz=640,  # inference size (pixels)
         conf_thres=0.25,  # confidence threshold
         iou_thres=0.45,  # NMS IOU threshold
-        max_det=1000,  # maximum detections per image
+        max_det=25,  # maximum detections per image
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
-        view_img=False,  # show results
+        view_img=True,  # show results
         save_txt=False,  # save results to *.txt
         save_conf=False,  # save confidences in --save-txt labels
         save_crop=False,  # save cropped prediction boxes
@@ -45,7 +45,7 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
         project='runs/detect',  # save results to project/name
         name='exp',  # save results to project/name
         exist_ok=False,  # existing project/name ok, do not increment
-        line_thickness=3,  # bounding box thickness (pixels)
+        line_thickness=1,  # bounding box thickness (pixels)
         hide_labels=False,  # hide labels
         hide_conf=False,  # hide confidences
         half=False,  # use FP16 half-precision inference
@@ -145,8 +145,13 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
+
+
+
                 # Write results
+                object_positions = []
                 for *xyxy, conf, cls in reversed(det):
+                    
                     if save_txt:  # Write to file
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                         line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
@@ -155,10 +160,44 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
 
                     if save_img or save_crop or view_img:  # Add bbox to image
                         c = int(cls)  # integer class
-                        label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
+                        #label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f} {xywh[0]} {xywh[1]}')
+                        object_position = [int((xyxy[0] + xyxy[2])/2), int((xyxy[1] + xyxy[3])/2)]
+                        object_positions.append(object_position)
+                        label = f'{(xyxy[0] + xyxy[2])/2} {(xyxy[1] + xyxy[3])/2}'
+                        
                         plot_one_box(xyxy, im0, label=label, color=colors(c, True), line_thickness=line_thickness)
+                        
+                        
+                        
+    
+                        
+                        
                         if save_crop:
                             save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
+
+            object_positions.sort()
+            hard_object = False
+            for detected in object_positions:
+                if detected[0] >= 720 and detected[0] <= 1200:
+                    cv2.line(im0,(720,0),(720,1080),(0, 0, 255),3)
+                    cv2.line(im0,(1200,0),(1200,1080),(0, 0, 255),3)
+                    hard_object = True
+                    break
+                else:
+                    cv2.line(im0,(720,0),(720,1080),(0, 255, 21),3)
+                    cv2.line(im0,(1200,0),(1200,1080),(0, 255, 21),3)
+            
+            
+            if hard_object == True:
+                largest_distance = 0
+                optimal_path = 0
+                for x in range(0, len(object_positions)-1):
+                    distance = object_positions[x+1][0] - object_positions[x][0]
+                    if distance > largest_distance:
+                        largest_distance = distance
+                        optimal_path = int(distance / 2 + object_positions[x][0])
+                        
+            cv2.line(im0, (960, 1080), (optimal_path,0), (0, 255, 21),3)
 
             # Print time (inference + NMS)
             print(f'{s}Done. ({t2 - t1:.3f}s)')
@@ -166,7 +205,8 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
             # Stream results
             if view_img:
                 cv2.imshow(str(p), im0)
-                cv2.waitKey(1)  # 1 millisecond
+                if cv2.waitKey(0) & 0xFF == ord('q'):
+                    cv2.destroyAllWindows()
 
             # Save results (image with detections)
             if save_img:
@@ -200,13 +240,13 @@ def run(weights='yolov5s.pt',  # model.pt path(s)
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='yolov5s.pt', help='model.pt path(s)')
-    parser.add_argument('--source', type=str, default='data/images', help='file/dir/URL/glob, 0 for webcam')
+    parser.add_argument('--source', type=str, default='test-image3.jpg', help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
-    parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
+    parser.add_argument('--max-det', type=int, default=100, help='maximum detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--view-img', action='store_true', help='show results')
+    parser.add_argument('--view-img', default=True, help='show results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--save-crop', action='store_true', help='save cropped prediction boxes')
@@ -219,7 +259,7 @@ def parse_opt():
     parser.add_argument('--project', default='runs/detect', help='save results to project/name')
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--line-thickness', default=3, type=int, help='bounding box thickness (pixels)')
+    parser.add_argument('--line-thickness', default=1, type=int, help='bounding box thickness (pixels)')
     parser.add_argument('--hide-labels', default=False, action='store_true', help='hide labels')
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
